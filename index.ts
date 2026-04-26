@@ -9,7 +9,7 @@ const server = createServer(app);
 const io = new Server(server)
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
-const MAX_ARRAY_COUNT = 100;
+const MAX_ARRAY_COUNT = 1000;
 
 let totalUsers = 0;
 let users = new Map();
@@ -56,7 +56,9 @@ io.on("connection", socket => {
         checkboxs[index]!.userId = userId;
         checkboxs[index]!.styles = { backgroundColor: colorAssigned, borderColor: colorAssigned, boxShadow: `0 0 5px ${colorAssigned}` };
 
-        socket.broadcast.emit("checkbox:update", {...data, colorAssigned})
+        console.log({checkboxs, index, checked, userId})
+
+        io.emit("checkbox:update", {...data, colorAssigned})
     })
 })
 
