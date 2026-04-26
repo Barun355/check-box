@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Checkbox Generator</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <div class="container">
+      <div class="header">
+        <h1>Checkbox Generator</h1>
+        <div class="stats-container">
+          <div class="stat-item">
+            <span class="stat-label">Total Real Users</span>
+            <span class="stat-value" id="usersCount">0</span>
+          </div>
+        </div>
+      </div>
+      <div id="checkboxContainer"></div>
+    </div>
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="checkboxes.js"></script>
+  </body>
+</html>
