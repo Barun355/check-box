@@ -1,4 +1,4 @@
-const MAX_ARRAY_COUNT = 10000;
+const MAX_ARRAY_COUNT = 20;
 const MAX_CHECKBOX_COUNT = 30;
 
 let isConnected = false;
@@ -13,10 +13,13 @@ socket.on("connect", () => {
 });
 
 socket.on("checkbox:init", (state) => {
-  const { checkboxs } = state;
-  console.log("inital:state", state);
+  const { checkboxs, userId, colorAssigned } = state;
+
+  localStorage.setItem("userId", userId);
+  localStorage.setItem("colorAssigned", colorAssigned);
+
   checkboxUI = checkboxs;
-  updateAllCheckbox(checkboxs);
+  updateAllCheckbox(checkboxUI);
 });
 
 socket.on("stats:update", (stats) => {
@@ -25,14 +28,21 @@ socket.on("stats:update", (stats) => {
 });
 
 socket.on("checkbox:update", (state) => {
-  const { index, checked } = state;
-
-  console.log("event:frontend", { ...state });
+  const { index, checked, colorAssigned } = state;
 
   const checkbox = document.getElementById(`checkbox-${index}`);
 
   checkbox.checked = checked;
-  console.log("checkbox:new-state", checkbox.checked);
+
+  if (checked) {
+    updateCheckboxStyle(index, {
+      backgroundColor: colorAssigned,
+      borderColor: colorAssigned,
+      boxShadow: `0 0 5px ${colorAssigned}`,
+    });
+  } else {
+    updateCheckboxStyle(index, { backgroundColor: "", borderColor: "", boxShadow: "" })
+  }
 });
 
 function generateCheckboxes(numberOfCheckboxes = 5, states = null) {
@@ -52,7 +62,8 @@ function generateCheckboxes(numberOfCheckboxes = 5, states = null) {
     checkbox.disabled = true;
 
     if (states) {
-      checkbox.checkbox = states[i];
+      checkbox.checked = states[i].state;
+      updateCheckboxStyle(i, states[i].styles);
     }
 
     checkbox.addEventListener("change", () => handleCheckboxChange(i));
@@ -86,17 +97,31 @@ function toggleAllCheckbox(state = 0) {
   }
 }
 
-function updateIndividualCheckbox(index, state) {
+function updateIndividualCheckbox(index, data) {
   const checkbox = document.getElementById(`checkbox-${index}`);
-  checkbox.checked = state;
+  checkbox.checked = data.state;
+
+  if (data.state) {
+    updateCheckboxStyle(index, data.styles)
+  } else {
+    updateCheckboxStyle(index, { backgroundColor: "", borderColor: "", boxShadow: "" })
+  }
 }
 
 function handleCheckboxChange(index) {
-  const newState = document.getElementById(`checkbox-${index}`).checked;
+  const checkbox = document.getElementById(`checkbox-${index}`);
+  const newState = checkbox.checked;
+  const colorAssigned = getAssignedColor();
 
-  const state = { index, checked: newState };
-  
-  checkboxUI[index] = newState;
+  const state = { index, checked: newState, userId: getUserId() };
+
+  checkboxUI[index].state = newState;
+
+  if (newState) {
+    updateCheckboxStyle(index, { backgroundColor: colorAssigned, borderColor: colorAssigned, boxShadow: `0 0 5px ${colorAssigned}` })
+  } else {
+    updateCheckboxStyle(index, { backgroundColor: "", borderColor: "", boxShadow: "" })
+  }
 
   socket.emit("checkbox:change", state);
 }
@@ -107,6 +132,28 @@ function updateTotalUsers(totalUsers) {
 }
 // Generate 5 checkboxes when the page loads
 window.addEventListener("DOMContentLoaded", () => {
-  checkboxUI = new Array(MAX_ARRAY_COUNT).fill(false);
+  checkboxUI = new Array(MAX_ARRAY_COUNT).fill(false).map(() => ({
+    state: false,
+    userId: null,
+    styles: {},
+  }));
   generateCheckboxes(MAX_ARRAY_COUNT);
 });
+
+function getUserId() {
+  return localStorage.getItem("userId") || "";
+}
+
+function updateCheckboxStyle(index, styles) {
+  const checkbox = document.getElementById(`checkbox-${index}`);
+
+  if (checkbox.checked) {
+    for (const [key, value] of Object.entries(styles)) {
+      checkbox.style[key] = value;
+    }
+  }
+}
+
+function getAssignedColor() {
+  return localStorage.getItem("colorAssigned") || "#0099ff";
+}
