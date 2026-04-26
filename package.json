@@ -4,7 +4,9 @@
   "type": "module",
   "private": true,
   "scripts": {
-    "dev": "bun --hot ./index.ts"
+    "dev": "bun --hot ./index.ts",
+    "build": "rm -rf node_modules && bun install --production --frozen-lockfile && bun build ./index.ts --outdir ./dist --target bun --minify && cp -r ./public ./dist",
+    "start": "bun ./dist/index.js"
   },
   "devDependencies": {
     "@types/bun": "latest"
