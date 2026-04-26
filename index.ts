@@ -9,7 +9,7 @@ const server = createServer(app);
 const io = new Server(server)
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
-const MAX_ARRAY_COUNT = 20;
+const MAX_ARRAY_COUNT = 100;
 
 let totalUsers = 0;
 let users = new Map();
