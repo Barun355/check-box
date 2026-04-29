@@ -8,3 +8,5 @@ export const SOCKET_EVENTS = {
     CHECKBOX_CHANGE: "checkbox:change",
     STATS_UPDATE: "stats:update"
 }
+
+export const MAX_ARRAY_COUNT = 20;

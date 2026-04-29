@@ -1,4 +1,4 @@
-const MAX_ARRAY_COUNT = 1000;
+const MAX_ARRAY_COUNT = 20;
 const MAX_CHECKBOX_COUNT = 30;
 
 let isConnected = false;
@@ -33,6 +33,7 @@ socket.on("checkbox:init", (state) => {
 
 socket.on("stats:update", (stats) => {
   const { totalUsers } = stats;
+  console.log('stats:update', totalUsers)
   updateTotalUsers(totalUsers);
 });
 

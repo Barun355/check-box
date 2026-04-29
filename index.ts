@@ -2,36 +2,58 @@ import express from "express";
 import { createServer } from "http";
 import { Server } from "socket.io";
 import { fileURLToPath } from "url";
-import { dirname, join } from "path";
-import { publisher, subscriber, redisAdapter } from "./redis-connection";
-import { CHANNELS, SOCKET_EVENTS } from "./constant";
+import { dirname, join, parse } from "path";
+import { publisher, subscriber, redisAdapter, redis } from "./redis-connection";
+import { CHANNELS, MAX_ARRAY_COUNT, SOCKET_EVENTS } from "./constant";
 
 const app = express();
 const server = createServer(app);
 const io = new Server(server);
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const MAX_ARRAY_COUNT = 1000;
 const PORT = process.env.PORT || 3000;
-
-let totalUsers = 0;
-let users = new Map();
-
-const checkboxs = new Array(MAX_ARRAY_COUNT)
-  .fill(false)
-  .map(() => ({ state: false, userId: null, styles: {} }));
 
 app.use(express.static(join(__dirname + "/public")));
 
-app.get("/", (req, res) => {
+app.get("/", (_, res) => {
   res.sendFile(join(__dirname + "/index.html"));
 });
 
 subscriber.subscribe(CHANNELS.CHECKBOX);
-subscriber.on("message", (channel, message) => {
+subscriber.on("message", async (channel, message) => {
   if (channel === CHANNELS.CHECKBOX) {
     const parsedMessage = JSON.parse(message);
-    io.emit(parsedMessage.event, parsedMessage.data);
+
+    console.log('Valkey:message:subscriber-1', parsedMessage)
+
+    if (parsedMessage.event === SOCKET_EVENTS.STATS_UPDATE) {
+      io.emit(parsedMessage.event, parsedMessage.data);
+    } else if (parsedMessage.event === SOCKET_EVENTS.CHECKBOX_CHANGE) {
+      const { data } = parsedMessage;
+
+      const { index, checked, userId } = data;
+      const result = await redisAdapter.getUserById(userId);
+
+      console.log("Valkey:GetUserById", result);
+      const { colorAssigned } = result.data;
+
+      if (index > MAX_ARRAY_COUNT) {
+        throw new Error("Index out of bound");
+      }
+
+      const updatedCheckbox = await redisAdapter.updateCheckbox(index, {
+        state: checked,
+        userId,
+        styles: {
+          backgroundColor: colorAssigned,
+          borderColor: colorAssigned,
+          boxShadow: `0 0 5px ${colorAssigned}`,
+        },
+      });
+      console.log({ updatedCheckbox });
+
+      io.emit("checkbox:update", { ...data, colorAssigned });
+    }
   }
 });
 
@@ -40,45 +62,33 @@ io.on("connection", async (socket) => {
 
   const userId = socket.id;
   const colorAssigned = generateRandomHexColor();
+  const { data: initialCheckboxes } = await redisAdapter.getCheckboxes();
 
-  // users.set(userId, { colorAssigned })
-  // totalUsers++;
-  await redisAdapter.increaseUserCount(userId, colorAssigned);
+  console.log("inital checkboxes")
+
+  await redisAdapter.addUser(userId, colorAssigned);
 
   socket.on("disconnect", async () => {
     console.log("A user disconnected");
 
-    clearUserFromCheckboxes(userId);
+    await redisAdapter.clearUserFromCheckboxes(userId);
 
-    // users.delete(userId);
-    // totalUsers--;
     await redisAdapter.decreaseUserCount(userId);
 
     await broadcastStats();
   });
 
-  socket.emit("checkbox:init", { checkboxs, userId, colorAssigned });
+  socket.emit("checkbox:init", { checkboxs: initialCheckboxes , userId, colorAssigned });
   await broadcastStats();
 
   socket.on("checkbox:change", (data) => {
-    const { index, checked, userId } = data;
-    const colorAssigned = getColorAssigned(userId);
-
-    if (index > MAX_ARRAY_COUNT) {
-      throw new Error("Index out of bound");
-    }
-
-    checkboxs[index]!.state = checked;
-    checkboxs[index]!.userId = userId;
-    checkboxs[index]!.styles = {
-      backgroundColor: colorAssigned,
-      borderColor: colorAssigned,
-      boxShadow: `0 0 5px ${colorAssigned}`,
-    };
-
-    console.log({ checkboxs, index, checked, userId });
-
-    io.emit("checkbox:update", { ...data, colorAssigned });
+    publisher.publish(
+      CHANNELS.CHECKBOX,
+      JSON.stringify({
+        data,
+        event: SOCKET_EVENTS.CHECKBOX_CHANGE,
+      }),
+    );
   });
 });
 
@@ -90,7 +100,6 @@ async function broadcastStats() {
   const result = await redisAdapter.getTotalUsers();
 
   console.log("stats:update", result.data.totalUsers);
-  // io.emit("stats:update", { totalUsers: result.data.totalUsers })
 
   publisher.publish(
     CHANNELS.CHECKBOX,
@@ -139,14 +148,31 @@ function generateRandomHexColor(): string {
   return hslToHex(hue, saturation, lightness);
 }
 
-function getColorAssigned(userId: string): string {
-  return users.get(userId)?.colorAssigned || "#0099ff";
+async function gracefulShutdown(signal: "SIGINT" | "SIGTERM") {
+    console.log(`\nReceived ${signal}. Shutting down gracefully...`);
+
+    // Stop accepting new connections
+    server.close(async () => {
+        console.log('HTTP server closed.');
+
+        try {
+            // Close database connections
+            await redisAdapter.redisClient.quit();
+            console.log('Redis connection closed.');
+            process.exit(0);
+        } catch (err) {
+            console.error('Error during shutdown:', err);
+            process.exit(1);
+        }
+    });
+
+    // Force exit after 10 seconds if it hangs
+    setTimeout(() => {
+        console.error('Could not close connections in time, forcing shut down');
+        process.exit(1);
+    }, 10000);
 }
 
-function clearUserFromCheckboxes(userId: string) {
-  for (let i = 0; i < checkboxs.length; i++) {
-    if (checkboxs[i]!.userId === userId) {
-      checkboxs[i]!.userId = null;
-    }
-  }
-}
+// 4. Listen for signals
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));   // Ctrl+C
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM')); // Docker stop
